@@ -22,8 +22,6 @@ public class TakeAway {
 
 	private int _preparedDoeners = 0;
 
-	// public Queue<Group> _queue = new LinkedList<Group>();
-
 	public static void main(String args[]) {
 		final TakeAway takeaway = new TakeAway();
 		for (int i = 0; i < NUM_EMPLOYEES; i++) {
@@ -46,6 +44,7 @@ public class TakeAway {
 					int size = ThreadLocalRandom.current().nextInt(SIZE_MIN, SIZE_MAX + 1);
 					System.out.println(Thread.currentThread().getName() + " entering with " + size + " pupils");
 					takeaway.order(size);
+					takeaway.waitForOrder(size);
 				}
 			}, "Group-" + i).start();
 			try {
@@ -57,11 +56,17 @@ public class TakeAway {
 	}
 
 	public synchronized void order(int amount) {
-		System.out.println(Thread.currentThread().getName() + " ordered " + amount + " doeners");
 		_orderedDoeners += amount;
+
+		System.out.println(Thread.currentThread().getName() + " ordered " + amount + " doeners");
+		System.out.println("Ordered: " + _orderedDoeners + "\tPrepared: " + _preparedDoeners);
+
+		this.notify();
+	}
+
+	public synchronized void waitForOrder(int amount) {
 		while (_preparedDoeners < amount) {
 			try {
-				this.notify();
 				this.wait();
 			} catch (InterruptedException e) {
 				e.printStackTrace();
@@ -69,28 +74,24 @@ public class TakeAway {
 		}
 		_preparedDoeners -= amount;
 		System.out.println(Thread.currentThread().getName() + " leaving");
+		System.out.println("Ordered: " + _orderedDoeners + "\tPrepared: " + _preparedDoeners);
 	}
 
-	public synchronized void serve() {
+	public void serve() {
 		while (true) {
-			if (_orderedDoeners > 0) {
-				try {
-					int time = ThreadLocalRandom.current().nextInt(TIME_MIN, TIME_MAX + 1);
-					System.out.println(Thread.currentThread().getName() + " preparing doener in " + time + "s");
-					_orderedDoeners--;
-					_preparedDoeners++;
-					System.out.println("Ordered: " + _orderedDoeners + "\tPrepared: " + _preparedDoeners);
-					Thread.sleep(time * 1000);
+			synchronized (this) {
+				if (_orderedDoeners > 0) {
+					try {
+						int time = ThreadLocalRandom.current().nextInt(TIME_MIN, TIME_MAX + 1);
+						System.out.println(Thread.currentThread().getName() + " preparing doener in " + time + "s");
+						_orderedDoeners--;
+						_preparedDoeners++;
+						System.out.println("Ordered: " + _orderedDoeners + "\tPrepared: " + _preparedDoeners);
+						Thread.sleep(time * 1000);
+					} catch (InterruptedException e) {
+						e.printStackTrace();
+					}
 					this.notify();
-					this.wait();
-				} catch (InterruptedException e) {
-					e.printStackTrace();
-				}
-			} else {
-				try {
-					this.wait();
-				} catch (InterruptedException e) {
-					e.printStackTrace();
 				}
 			}
 		}
