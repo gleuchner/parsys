@@ -6,6 +6,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
@@ -26,6 +27,8 @@ public class TakeAway {
 
 	private static final int NUM_GROUPS = 20;
 
+	private int groupsLeft = 0;
+
 	private Lock _lock = new ReentrantLock();
 
 	private Condition _condition = _lock.newCondition();
@@ -41,16 +44,7 @@ public class TakeAway {
 
 		final TakeAway takeaway = new TakeAway();
 
-		ExecutorService groupPool = Executors.newCachedThreadPool(new ThreadFactory() {
-			int count = 0;
-
-			@Override
-			public Thread newThread(Runnable r) {
-				Thread thread = new Thread(r, "Group-" + count);
-				count++;
-				return thread;
-			}
-		});
+		ExecutorService groupPool = Executors.newCachedThreadPool();
 
 		ExecutorService employeePool = Executors.newFixedThreadPool(NUM_EMPLOYEES, new ThreadFactory() {
 			int count = 0;
@@ -68,15 +62,25 @@ public class TakeAway {
 		}
 
 		for (int i = 0; i < NUM_GROUPS; i++) {
-			groupPool.submit(new Group(ThreadLocalRandom.current().nextInt(SIZE_MIN, SIZE_MAX + 1), takeaway));
+			groupPool.submit(
+					new Group(ThreadLocalRandom.current().nextInt(SIZE_MIN, SIZE_MAX + 1), takeaway, "Group-" + i));
 			try {
 				Thread.sleep(INTERVAL * 1000);
 			} catch (InterruptedException e) {
 			}
 		}
-		
+
 		groupPool.shutdown();
-		employeePool.shutdownNow();
+		employeePool.shutdown();
+	}
+
+	public boolean finished() {
+		_lock.lock();
+		try {
+			return groupsLeft == NUM_GROUPS;
+		} finally {
+			_lock.unlock();
+		}
 	}
 
 	public void order(Group g) {
@@ -85,7 +89,7 @@ public class TakeAway {
 			for (int i = 0; i < g.getMembers(); i++) {
 				_queue.add(g);
 			}
-			System.out.println(Thread.currentThread().getName() + " ordered " + g.getMembers() + " doeners");
+			System.out.println(g.getName() + " ordered " + g.getMembers() + " doeners");
 			System.out.println(this._queue.size() + " in queue");
 			if (_queue.size() == g.getMembers()) {
 				_condition.signalAll();
@@ -98,7 +102,7 @@ public class TakeAway {
 	public void serve() {
 		Group g = null;
 
-		while (true) {
+		while (!this.finished()) {
 			_lock.lock();
 			try {
 				g = _queue.poll();
@@ -136,9 +140,9 @@ public class TakeAway {
 	public void leave(Group g) {
 		_lock.lock();
 		try {
-			System.out.println(
-					Thread.currentThread().getName() + " leaving with " + g.getServed() + "/" + g.getMembers());
+			System.out.println(g.getName() + " leaving with " + g.getServed() + "/" + g.getMembers());
 			System.out.println(this._queue.size() + " in queue");
+			groupsLeft++;
 			if (_queue.size() == 0) {
 				_condition.signalAll();
 			}

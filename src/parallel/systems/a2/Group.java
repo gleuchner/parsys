@@ -9,6 +9,8 @@ public class Group implements Runnable {
 	private int _members;
 
 	private int _served;
+	
+	private String _name;
 
 	private TakeAway _takeAway;
 
@@ -16,14 +18,15 @@ public class Group implements Runnable {
 
 	private Condition _condition = _lock.newCondition();
 
-	public Group(int members, TakeAway takeAway) {
+	public Group(int members, TakeAway takeAway, String name) {
 		_takeAway = takeAway;
 		_members = members;
+		_name = name;
 	}
 	
 	@Override
 	public void run() {
-		System.out.println(Thread.currentThread().getName() + " entering with " + _members + " pupils");
+		System.out.println(_name + " entering with " + _members + " pupils");
 		_takeAway.order(this);
 		waitForOrder();
 		_takeAway.leave(this);
@@ -61,5 +64,9 @@ public class Group implements Runnable {
 
 	public Condition getCondition() {
 		return _condition;
+	}
+
+	public synchronized String getName() {
+		return _name;
 	}
 }
