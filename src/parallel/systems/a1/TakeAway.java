@@ -1,56 +1,45 @@
 package parallel.systems.a1;
 
+import java.util.LinkedList;
+import java.util.Queue;
 import java.util.concurrent.ThreadLocalRandom;
 
 public class TakeAway {
 
 	private static final int INTERVAL = 5;
 
-	private static final int TIME_MIN = 1;
+	private static final int TIME_MIN = 4;
 
-	private static final int TIME_MAX = 4;
+	private static final int TIME_MAX = 7;
 
-	private static final int SIZE_MIN = 1;
+	private static final int SIZE_MIN = 2;
 
-	private static final int SIZE_MAX = 10;
+	private static final int SIZE_MAX = 5;
 
 	private static final int NUM_EMPLOYEES = 3;
 
 	private static final int NUM_GROUPS = 20;
-	
+
 	private int groupsLeft;
 
-	private int _orderedDoeners = 0;
-
-	private int _preparedDoeners = 0;
+	private Queue<Group> _queue = new LinkedList<Group>();
 
 	public static void main(String args[]) {
 		final TakeAway takeaway = new TakeAway();
 		for (int i = 0; i < NUM_EMPLOYEES; i++) {
-			Thread t = new Thread(new Runnable() {
-
-				@Override
-				public void run() {
-					while (!takeaway.finished()) {
-						takeaway.serve();
-					}
-				}
-			}, "Employee-" + i);
+			Thread t = new Thread(() -> takeaway.serve(), "Employee-" + i);
 			t.start();
 		}
 
 		for (int i = 0; i < NUM_GROUPS; i++) {
-			Thread t = new Thread(new Runnable() {
+			Thread t = new Thread(() -> {
+				Group group = new Group(ThreadLocalRandom.current().nextInt(SIZE_MIN, SIZE_MAX + 1));
 
-				@Override
-				public void run() {
-					int size = ThreadLocalRandom.current().nextInt(SIZE_MIN, SIZE_MAX + 1);
+				System.out
+						.println(Thread.currentThread().getName() + " entering with " + group.getMembers() + " pupils");
 
-					System.out.println(Thread.currentThread().getName() + " entering with " + size + " pupils");
-
-					takeaway.order(size);
-					takeaway.waitForOrder(size);
-				}
+				takeaway.order(group);
+				takeaway.waitForOrder(group);
 			}, "Group-" + i);
 			t.start();
 			try {
@@ -64,44 +53,68 @@ public class TakeAway {
 		return groupsLeft == NUM_GROUPS;
 	}
 
-	public synchronized void order(int amount) {
-		_orderedDoeners += amount;
-
-		System.out.println(Thread.currentThread().getName() + " ordered " + amount + " doeners");
-		System.out.println("Ordered: " + _orderedDoeners + "\tPrepared: " + _preparedDoeners);
-
-		this.notify();
-	}
-
-	public synchronized void waitForOrder(int amount) {
-		while (_preparedDoeners < amount) {
-			try {
-				this.wait();
-			} catch (InterruptedException e) {
+	public void order(Group g) {
+		synchronized (this) {
+			for (int i = 0; i < g.getMembers(); i++) {
+				_queue.add(g);
+			}
+			System.out.println(Thread.currentThread().getName() + " ordered " + g.getMembers() + " doeners");
+			System.out.println(this._queue.size() + " in queue");
+			if (_queue.size() == g.getMembers()) {
+				this.notifyAll();
 			}
 		}
-		_preparedDoeners -= amount;
-
-		System.out.println(Thread.currentThread().getName() + " leaving");
-		System.out.println("Ordered: " + _orderedDoeners + "\tPrepared: " + _preparedDoeners);
-		
-		groupsLeft++;
 	}
 
-	public synchronized void serve() {
-		if (_orderedDoeners > 0) {
-			int time = ThreadLocalRandom.current().nextInt(TIME_MIN, TIME_MAX + 1);
-
-			_orderedDoeners--;
-			_preparedDoeners++;
-
-			System.out.println(Thread.currentThread().getName() + " preparing doener in " + time + "s");
-			System.out.println("Ordered: " + _orderedDoeners + "\tPrepared: " + _preparedDoeners);
-			try {
-				Thread.sleep(time * 1000);
-			} catch (InterruptedException e) {
+	public void waitForOrder(Group g) {
+		synchronized (g) {
+			while (g.getServed() < g.getMembers()) {
+				try {
+					g.wait();
+				} catch (InterruptedException e) {
+				}
 			}
-			this.notify();
+			synchronized (this) {
+				System.out.println(
+						Thread.currentThread().getName() + " leaving with " + g.getServed() + "/" + g.getMembers());
+				System.out.println(this._queue.size() + " in queue");
+				groupsLeft++;
+				if (_queue.size() == 0) {
+					this.notifyAll();
+				}
+			}
+		}
+	}
+
+	public void serve() {
+		Group g = null;
+
+		while (!this.finished()) {
+			synchronized (this) {
+				g = _queue.poll();
+				if (g == null) {
+					try {
+						System.out.println(Thread.currentThread().getName() + " waiting");
+						this.wait();
+					} catch (InterruptedException e) {
+					}
+				} else {
+					System.out.println(Thread.currentThread().getName() + " serving customer");
+					System.out.println(_queue.size() + " in queue");
+				}
+			}
+			if (g != null) {
+				int time = ThreadLocalRandom.current().nextInt(TIME_MIN, TIME_MAX + 1);
+				try {
+					Thread.sleep(time * 1000);
+				} catch (InterruptedException e) {
+				}
+				synchronized (g) {
+					System.out.println(Thread.currentThread().getName() + " prepared doener in " + time + "s");
+					g.receive(1);
+					g.notify();
+				}
+			}
 		}
 	}
 }
