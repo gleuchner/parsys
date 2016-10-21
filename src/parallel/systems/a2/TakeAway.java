@@ -2,6 +2,9 @@ package parallel.systems.a2;
 
 import java.util.LinkedList;
 import java.util.Queue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
@@ -27,8 +30,6 @@ public class TakeAway {
 
 	private Condition _condition = _lock.newCondition();
 
-	private int groupsLeft;
-
 	private Queue<Group> _queue = new LinkedList<Group>();
 
 	public static void main(String args[]) {
@@ -40,30 +41,42 @@ public class TakeAway {
 
 		final TakeAway takeaway = new TakeAway();
 
+		ExecutorService groupPool = Executors.newCachedThreadPool(new ThreadFactory() {
+			int count = 0;
+
+			@Override
+			public Thread newThread(Runnable r) {
+				Thread thread = new Thread(r, "Group-" + count);
+				count++;
+				return thread;
+			}
+		});
+
+		ExecutorService employeePool = Executors.newFixedThreadPool(NUM_EMPLOYEES, new ThreadFactory() {
+			int count = 0;
+
+			@Override
+			public Thread newThread(Runnable r) {
+				Thread thread = new Thread(r, "Employee-" + count);
+				count++;
+				return thread;
+			}
+		});
+
 		for (int i = 0; i < NUM_EMPLOYEES; i++) {
-			Thread t = new Thread(() -> takeaway.serve(), "Employee-" + i);
-			t.start();
+			employeePool.submit(() -> takeaway.serve());
 		}
 
 		for (int i = 0; i < NUM_GROUPS; i++) {
-			Thread t = new Thread(new Group(ThreadLocalRandom.current().nextInt(SIZE_MIN, SIZE_MAX + 1), takeaway),
-					"Group-" + i);
-			t.start();
+			groupPool.submit(new Group(ThreadLocalRandom.current().nextInt(SIZE_MIN, SIZE_MAX + 1), takeaway));
 			try {
 				Thread.sleep(INTERVAL * 1000);
 			} catch (InterruptedException e) {
 			}
 		}
-	}
-
-	public boolean finished() {
-		_lock.lock();
-		try {
-			return groupsLeft == NUM_GROUPS;
-		} finally {
-			_lock.unlock();
-		}
-
+		
+		groupPool.shutdown();
+		employeePool.shutdownNow();
 	}
 
 	public void order(Group g) {
@@ -85,7 +98,7 @@ public class TakeAway {
 	public void serve() {
 		Group g = null;
 
-		while (!this.finished()) {
+		while (true) {
 			_lock.lock();
 			try {
 				g = _queue.poll();
@@ -123,12 +136,12 @@ public class TakeAway {
 	public void leave(Group g) {
 		_lock.lock();
 		try {
-		System.out.println(Thread.currentThread().getName() + " leaving with " + g.getServed() + "/" + g.getMembers());
-		System.out.println(this._queue.size() + " in queue");
-		groupsLeft++;
-		if (_queue.size() == 0) {
-			_condition.signalAll();
-		}
+			System.out.println(
+					Thread.currentThread().getName() + " leaving with " + g.getServed() + "/" + g.getMembers());
+			System.out.println(this._queue.size() + " in queue");
+			if (_queue.size() == 0) {
+				_condition.signalAll();
+			}
 		} finally {
 			_lock.unlock();
 		}
