@@ -25,22 +25,22 @@ public class TakeAway {
 	private Queue<Group> _queue = new LinkedList<Group>();
 
 	public static void main(String args[]) {
+		System.out.println("Group size: " + SIZE_MIN + "-" + SIZE_MAX);
+		System.out.println("Group count: " + NUM_GROUPS);
+		System.out.println("Group interval: " + INTERVAL);
+		System.out.println("Preparation time: " + TIME_MIN + "-" + TIME_MAX);
+		System.out.println("Employee count: " + NUM_EMPLOYEES);
+		
 		final TakeAway takeaway = new TakeAway();
+		
 		for (int i = 0; i < NUM_EMPLOYEES; i++) {
 			Thread t = new Thread(() -> takeaway.serve(), "Employee-" + i);
 			t.start();
 		}
 
 		for (int i = 0; i < NUM_GROUPS; i++) {
-			Thread t = new Thread(() -> {
-				Group group = new Group(ThreadLocalRandom.current().nextInt(SIZE_MIN, SIZE_MAX + 1));
-
-				System.out
-						.println(Thread.currentThread().getName() + " entering with " + group.getMembers() + " pupils");
-
-				takeaway.order(group);
-				takeaway.waitForOrder(group);
-			}, "Group-" + i);
+			Thread t = new Thread(new Group(ThreadLocalRandom.current().nextInt(SIZE_MIN, SIZE_MAX + 1), takeaway),
+					"Group-" + i);
 			t.start();
 			try {
 				Thread.sleep(INTERVAL * 1000);
@@ -62,26 +62,6 @@ public class TakeAway {
 			System.out.println(this._queue.size() + " in queue");
 			if (_queue.size() == g.getMembers()) {
 				this.notifyAll();
-			}
-		}
-	}
-
-	public void waitForOrder(Group g) {
-		synchronized (g) {
-			while (g.getServed() < g.getMembers()) {
-				try {
-					g.wait();
-				} catch (InterruptedException e) {
-				}
-			}
-			synchronized (this) {
-				System.out.println(
-						Thread.currentThread().getName() + " leaving with " + g.getServed() + "/" + g.getMembers());
-				System.out.println(this._queue.size() + " in queue");
-				groupsLeft++;
-				if (_queue.size() == 0) {
-					this.notifyAll();
-				}
 			}
 		}
 	}
@@ -115,6 +95,15 @@ public class TakeAway {
 					g.notify();
 				}
 			}
+		}
+	}
+
+	public synchronized void leave(Group g) {
+		System.out.println(Thread.currentThread().getName() + " leaving with " + g.getServed() + "/" + g.getMembers());
+		System.out.println(this._queue.size() + " in queue");
+		groupsLeft++;
+		if (_queue.size() == 0) {
+			this.notifyAll();
 		}
 	}
 }

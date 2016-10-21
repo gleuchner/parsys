@@ -1,13 +1,33 @@
 package parallel.systems.a1;
 
-public class Group {
+public class Group implements Runnable {
 
 	private int _members;
-	
+
 	private int _served;
-	
-	public Group(int members) {
+
+	private TakeAway _takeAway;
+
+	public Group(int members, TakeAway takeAway) {
+		_takeAway = takeAway;
 		_members = members;
+	}
+	
+	@Override
+	public void run() {
+		System.out.println(Thread.currentThread().getName() + " entering with " + _members + " pupils");
+		_takeAway.order(this);
+		waitForOrder();
+		_takeAway.leave(this);
+	}
+
+	public synchronized void waitForOrder() {
+		while (_served < _members) {
+			try {
+				this.wait();
+			} catch (InterruptedException e) {
+			}
+		}
 	}
 
 	public int getServed() {
