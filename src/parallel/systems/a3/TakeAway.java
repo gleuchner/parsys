@@ -1,9 +1,10 @@
-package parallel.systems.a2;
+package parallel.systems.a3;
 
 import java.util.LinkedList;
 import java.util.Queue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
@@ -46,6 +47,8 @@ public class TakeAway {
 
 		ExecutorService groupPool = Executors.newCachedThreadPool();
 
+		ScheduledExecutorService startPool = Executors.newScheduledThreadPool(1);
+
 		ExecutorService employeePool = Executors.newFixedThreadPool(NUM_EMPLOYEES, new ThreadFactory() {
 			int count = 0;
 
@@ -61,17 +64,13 @@ public class TakeAway {
 			employeePool.submit(() -> takeaway.serve());
 		}
 
-		for (int i = 0; i < NUM_GROUPS; i++) {
-			groupPool.submit(
-					new Group(ThreadLocalRandom.current().nextInt(SIZE_MIN, SIZE_MAX + 1), takeaway, "Group-" + i));
-			try {
-				Thread.sleep(INTERVAL * 1000);
-			} catch (InterruptedException e) {
-			}
-		}
-
+		startPool.scheduleAtFixedRate(() -> {
+			groupPool.submit(new Group(ThreadLocalRandom.current().nextInt(SIZE_MIN, SIZE_MAX + 1), takeaway, "Group"));
+		}, 0, INTERVAL, TimeUnit.SECONDS);
+		startPool.shutdown();
 		groupPool.shutdown();
 		employeePool.shutdown();
+
 	}
 
 	public boolean finished() {

@@ -1,4 +1,4 @@
-package parallel.systems.a2;
+package parallel.systems.a3;
 
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
