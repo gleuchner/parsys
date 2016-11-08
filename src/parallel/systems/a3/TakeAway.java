@@ -5,6 +5,7 @@ import java.util.Queue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
@@ -28,11 +29,15 @@ public class TakeAway {
 
 	private static final int NUM_GROUPS = 20;
 
-	private int groupsLeft = 0;
+	private int _groupsLeft = 0;
+
+	private int _groupsStarted = 0;
 
 	private Lock _lock = new ReentrantLock();
 
 	private Condition _condition = _lock.newCondition();
+
+	private Semaphore _semaphore = new Semaphore(NUM_EMPLOYEES);
 
 	private Queue<Group> _queue = new LinkedList<Group>();
 
@@ -65,24 +70,34 @@ public class TakeAway {
 		}
 
 		startPool.scheduleAtFixedRate(() -> {
-			groupPool.submit(new Group(ThreadLocalRandom.current().nextInt(SIZE_MIN, SIZE_MAX + 1), takeaway, "Group"));
+			takeaway._lock.lock();
+			try {
+				if (takeaway._groupsStarted < NUM_GROUPS) {
+					groupPool.submit(new Group(ThreadLocalRandom.current().nextInt(SIZE_MIN, SIZE_MAX + 1), takeaway,
+							"Group-" + takeaway._groupsStarted));
+					takeaway._groupsStarted++;
+				} else {
+					startPool.shutdown();
+					groupPool.shutdown();
+					employeePool.shutdown();
+				}
+			} finally {
+				takeaway._lock.unlock();
+			}
 		}, 0, INTERVAL, TimeUnit.SECONDS);
-		startPool.shutdown();
-		groupPool.shutdown();
-		employeePool.shutdown();
-
 	}
 
 	public boolean finished() {
 		_lock.lock();
 		try {
-			return groupsLeft == NUM_GROUPS;
+			return _groupsLeft == NUM_GROUPS;
 		} finally {
 			_lock.unlock();
 		}
 	}
 
 	public void order(Group g) {
+		_semaphore.acquireUninterruptibly();
 		_lock.lock();
 		try {
 			for (int i = 0; i < g.getMembers(); i++) {
@@ -141,12 +156,13 @@ public class TakeAway {
 		try {
 			System.out.println(g.getName() + " leaving with " + g.getServed() + "/" + g.getMembers());
 			System.out.println(this._queue.size() + " in queue");
-			groupsLeft++;
+			_groupsLeft++;
 			if (_queue.size() == 0) {
 				_condition.signalAll();
 			}
 		} finally {
 			_lock.unlock();
 		}
+		_semaphore.release();
 	}
 }
