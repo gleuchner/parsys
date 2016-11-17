@@ -1,4 +1,4 @@
-package parallel.systems.a3;
+package parallel.systems.a4;
 
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
@@ -9,7 +9,7 @@ public class Group implements Runnable {
 	private int _members;
 
 	private int _served;
-	
+
 	private String _name;
 
 	private TakeAway _takeAway;
@@ -18,12 +18,15 @@ public class Group implements Runnable {
 
 	private Condition _condition = _lock.newCondition();
 
-	public Group(int members, TakeAway takeAway, String name) {
+	private boolean _goldCard;
+
+	public Group(int members, TakeAway takeAway, String name, boolean goldCard) {
 		_takeAway = takeAway;
 		_members = members;
 		_name = name;
+		_goldCard = goldCard;
 	}
-	
+
 	@Override
 	public void run() {
 		System.out.println(_name + " entering with " + _members + " pupils");
@@ -57,7 +60,7 @@ public class Group implements Runnable {
 	public int getMembers() {
 		return _members;
 	}
-	
+
 	public Lock getLock() {
 		return _lock;
 	}
@@ -68,5 +71,9 @@ public class Group implements Runnable {
 
 	public synchronized String getName() {
 		return _name;
+	}
+
+	public boolean hasGoldCard() {
+		return _goldCard;
 	}
 }

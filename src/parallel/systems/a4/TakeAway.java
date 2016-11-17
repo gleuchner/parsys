@@ -1,21 +1,21 @@
-package parallel.systems.a3;
+package parallel.systems.a4;
 
-import java.util.LinkedList;
-import java.util.Queue;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.Semaphore;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
 public class TakeAway {
 
 	private static final int INTERVAL = 5;
+
+	private static final int INTERVAL_GOLD_CARD = 10;
 
 	private static final int TIME_MIN = 4;
 
@@ -29,17 +29,20 @@ public class TakeAway {
 
 	private static final int NUM_GROUPS = 20;
 
+	// TODO: make ExecutorServices non static?
+	private static ExecutorService _groupPool;
+
+	private static ScheduledExecutorService _startPool;
+
+	private static ExecutorService _employeePool;
+
 	private int _groupsLeft = 0;
 
 	private int _groupsStarted = 0;
 
 	private Lock _lock = new ReentrantLock();
 
-	private Condition _condition = _lock.newCondition();
-
-	private Semaphore _semaphore = new Semaphore(NUM_EMPLOYEES);
-
-	private Queue<Group> _queue = new LinkedList<Group>();
+	private BlockingQueue<Group> _queue = new LinkedBlockingQueue<Group>();
 
 	public static void main(String args[]) {
 		System.out.println("Group size: " + SIZE_MIN + "-" + SIZE_MAX);
@@ -50,11 +53,11 @@ public class TakeAway {
 
 		final TakeAway takeaway = new TakeAway();
 
-		ExecutorService groupPool = Executors.newCachedThreadPool();
+		_groupPool = Executors.newCachedThreadPool();
 
-		ScheduledExecutorService startPool = Executors.newScheduledThreadPool(1);
+		_startPool = Executors.newScheduledThreadPool(1);
 
-		ExecutorService employeePool = Executors.newFixedThreadPool(NUM_EMPLOYEES, new ThreadFactory() {
+		_employeePool = Executors.newFixedThreadPool(NUM_EMPLOYEES, new ThreadFactory() {
 			int count = 0;
 
 			@Override
@@ -66,25 +69,38 @@ public class TakeAway {
 		});
 
 		for (int i = 0; i < NUM_EMPLOYEES; i++) {
-			employeePool.submit(() -> takeaway.serve());
+			_employeePool.submit(() -> takeaway.serve());
 		}
 
-		startPool.scheduleAtFixedRate(() -> {
+		_startPool.scheduleAtFixedRate(() -> {
 			takeaway._lock.lock();
 			try {
 				if (takeaway._groupsStarted < NUM_GROUPS) {
-					groupPool.submit(new Group(ThreadLocalRandom.current().nextInt(SIZE_MIN, SIZE_MAX + 1), takeaway,
-							"Group-" + takeaway._groupsStarted));
+					_groupPool.submit(new Group(ThreadLocalRandom.current().nextInt(SIZE_MIN, SIZE_MAX + 1), takeaway,
+							"Group-" + takeaway._groupsStarted, false));
 					takeaway._groupsStarted++;
 				} else {
-					startPool.shutdown();
-					groupPool.shutdown();
-					employeePool.shutdown();
+					_startPool.shutdown();
+					_groupPool.shutdown();
+					_employeePool.shutdown();
 				}
 			} finally {
 				takeaway._lock.unlock();
 			}
 		}, 0, INTERVAL, TimeUnit.SECONDS);
+
+		_startPool.scheduleAtFixedRate(() -> {
+			takeaway._lock.lock();
+			try {
+				if (takeaway._groupsStarted < NUM_GROUPS) {
+					_groupPool.submit(new Group(ThreadLocalRandom.current().nextInt(SIZE_MIN, SIZE_MAX + 1), takeaway,
+							"GoldCardGroup-" + takeaway._groupsStarted, true));
+					takeaway._groupsStarted++;
+				}
+			} finally {
+				takeaway._lock.unlock();
+			}
+		}, 0, INTERVAL_GOLD_CARD, TimeUnit.SECONDS);
 	}
 
 	public boolean finished() {
@@ -97,43 +113,20 @@ public class TakeAway {
 	}
 
 	public void order(Group g) {
-		_semaphore.acquireUninterruptibly();
-		_lock.lock();
-		try {
-			for (int i = 0; i < g.getMembers(); i++) {
-				_queue.add(g);
-			}
-			System.out.println(g.getName() + " ordered " + g.getMembers() + " doeners");
-			System.out.println(this._queue.size() + " in queue");
-			if (_queue.size() == g.getMembers()) {
-				_condition.signalAll();
-			}
-		} finally {
-			_lock.unlock();
+		for (int i = 0; i < g.getMembers(); i++) {
+			_queue.add(g);
 		}
+		System.out.println(g.getName() + " ordered " + g.getMembers() + " doeners");
+		System.out.println(this._queue.size() + " in queue");
 	}
 
 	public void serve() {
-		Group g = null;
+		Group g;
 
 		while (!this.finished()) {
-			_lock.lock();
 			try {
-				g = _queue.poll();
-				if (g == null) {
-					try {
-						System.out.println(Thread.currentThread().getName() + " waiting");
-						_condition.await();
-					} catch (InterruptedException e) {
-					}
-				} else {
-					System.out.println(Thread.currentThread().getName() + " serving customer");
-					System.out.println(_queue.size() + " in queue");
-				}
-			} finally {
-				_lock.unlock();
-			}
-			if (g != null) {
+				g = _queue.take();
+
 				int time = ThreadLocalRandom.current().nextInt(TIME_MIN, TIME_MAX + 1);
 				try {
 					Thread.sleep(time * 1000);
@@ -147,6 +140,7 @@ public class TakeAway {
 				} finally {
 					g.getLock().unlock();
 				}
+			} catch (InterruptedException e1) {
 			}
 		}
 	}
@@ -157,12 +151,13 @@ public class TakeAway {
 			System.out.println(g.getName() + " leaving with " + g.getServed() + "/" + g.getMembers());
 			System.out.println(this._queue.size() + " in queue");
 			_groupsLeft++;
-			if (_queue.size() == 0) {
-				_condition.signalAll();
+			if (_groupsLeft == NUM_GROUPS) {
+				_startPool.shutdown();
+				_groupPool.shutdown();
+				_employeePool.shutdownNow();
 			}
 		} finally {
 			_lock.unlock();
 		}
-		_semaphore.release();
 	}
 }
