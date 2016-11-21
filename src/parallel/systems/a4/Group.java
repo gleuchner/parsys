@@ -4,7 +4,7 @@ import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
-public class Group implements Runnable {
+public class Group implements Runnable, Comparable<Group> {
 
 	private int _members;
 
@@ -75,5 +75,27 @@ public class Group implements Runnable {
 
 	public boolean hasGoldCard() {
 		return _goldCard;
+	}
+
+	@Override
+	public int compareTo(Group o) {
+		if (this.hasGoldCard()) {
+			if (o.hasGoldCard()) {
+				return 0;
+			} else {
+				return -1;
+			}
+		} else {
+			if (o.hasGoldCard()) {
+				return 1;
+			} else {
+				return 0;
+			}
+		}
+	}
+
+	@Override
+	public String toString() {
+		return _name + (hasGoldCard() ? " GoldCard" : "");
 	}
 }

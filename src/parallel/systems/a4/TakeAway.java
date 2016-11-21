@@ -3,7 +3,7 @@ package parallel.systems.a4;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.PriorityBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadLocalRandom;
@@ -40,9 +40,11 @@ public class TakeAway {
 
 	private int _groupsStarted = 0;
 
+	private int _goldGroupsStarted = 0;
+
 	private Lock _lock = new ReentrantLock();
 
-	private BlockingQueue<Group> _queue = new LinkedBlockingQueue<Group>();
+	private BlockingQueue<QueueEntry<Group>> _queue = new PriorityBlockingQueue<QueueEntry<Group>>();
 
 	public static void main(String args[]) {
 		System.out.println("Group size: " + SIZE_MIN + "-" + SIZE_MAX);
@@ -94,8 +96,8 @@ public class TakeAway {
 			try {
 				if (takeaway._groupsStarted < NUM_GROUPS) {
 					_groupPool.submit(new Group(ThreadLocalRandom.current().nextInt(SIZE_MIN, SIZE_MAX + 1), takeaway,
-							"GoldCardGroup-" + takeaway._groupsStarted, true));
-					takeaway._groupsStarted++;
+							"GoldCardGroup-" + takeaway._goldGroupsStarted, true));
+					takeaway._goldGroupsStarted++;
 				}
 			} finally {
 				takeaway._lock.unlock();
@@ -106,7 +108,7 @@ public class TakeAway {
 	public boolean finished() {
 		_lock.lock();
 		try {
-			return _groupsLeft == NUM_GROUPS;
+			return _groupsLeft == NUM_GROUPS + _goldGroupsStarted;
 		} finally {
 			_lock.unlock();
 		}
@@ -114,7 +116,7 @@ public class TakeAway {
 
 	public void order(Group g) {
 		for (int i = 0; i < g.getMembers(); i++) {
-			_queue.add(g);
+			_queue.add(new QueueEntry<Group>(g));
 		}
 		System.out.println(g.getName() + " ordered " + g.getMembers() + " doeners");
 		System.out.println(this._queue.size() + " in queue");
@@ -125,20 +127,22 @@ public class TakeAway {
 
 		while (!this.finished()) {
 			try {
-				g = _queue.take();
+				g = _queue.take().getElement();
 
 				int time = ThreadLocalRandom.current().nextInt(TIME_MIN, TIME_MAX + 1);
 				try {
 					Thread.sleep(time * 1000);
 				} catch (InterruptedException e) {
 				}
-				g.getLock().lock();
-				try {
-					System.out.println(Thread.currentThread().getName() + " prepared doener in " + time + "s");
-					g.receive(1);
-					g.getCondition().signal();
-				} finally {
-					g.getLock().unlock();
+				if (g != null) {
+					g.getLock().lock();
+					try {
+						System.out.println(Thread.currentThread().getName() + " prepared doener in " + time + "s");
+						g.receive(1);
+						g.getCondition().signal();
+					} finally {
+						g.getLock().unlock();
+					}
 				}
 			} catch (InterruptedException e1) {
 			}
