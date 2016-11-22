@@ -13,13 +13,13 @@ import java.util.concurrent.locks.ReentrantLock;
 
 public class TakeAway {
 
-	private static final int INTERVAL = 5;
+	private static final int INTERVAL = 2;
 
-	private static final int INTERVAL_GOLD_CARD = 10;
+	private static final int INTERVAL_GOLD_CARD = 2 * INTERVAL;
 
-	private static final int TIME_MIN = 4;
+	private static final int TIME_MIN = 2;
 
-	private static final int TIME_MAX = 7;
+	private static final int TIME_MAX = 3;
 
 	private static final int SIZE_MIN = 2;
 
@@ -29,7 +29,6 @@ public class TakeAway {
 
 	private static final int NUM_GROUPS = 20;
 
-	// TODO: make ExecutorServices non static?
 	private static ExecutorService _groupPool;
 
 	private static ScheduledExecutorService _startPool;
@@ -81,10 +80,6 @@ public class TakeAway {
 					_groupPool.submit(new Group(ThreadLocalRandom.current().nextInt(SIZE_MIN, SIZE_MAX + 1), takeaway,
 							"Group-" + takeaway._groupsStarted, false));
 					takeaway._groupsStarted++;
-				} else {
-					_startPool.shutdown();
-					_groupPool.shutdown();
-					_employeePool.shutdown();
 				}
 			} finally {
 				takeaway._lock.unlock();
@@ -155,7 +150,7 @@ public class TakeAway {
 			System.out.println(g.getName() + " leaving with " + g.getServed() + "/" + g.getMembers());
 			System.out.println(this._queue.size() + " in queue");
 			_groupsLeft++;
-			if (_groupsLeft == NUM_GROUPS) {
+			if (_groupsLeft == NUM_GROUPS + _goldGroupsStarted) {
 				_startPool.shutdown();
 				_groupPool.shutdown();
 				_employeePool.shutdownNow();
